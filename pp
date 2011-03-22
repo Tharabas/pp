@@ -6,7 +6,7 @@
  *
  * CLI pretty printing of JSON and XML files (currently)
  * 
- * Copyright (C) 2001-2011 by Tharabas <free.software@tharabas.de>
+ * Copyright (C) 2001-2011 by Tharabas <code@tharabas.de>
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
