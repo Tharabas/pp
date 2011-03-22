@@ -18,10 +18,27 @@ chmod +x pp
 
 ### Use it
 
+The PrettyPrinter can be used to prettify JSON or XML inputs.
+
+Simply call the file's name as the last argument of the `pp` call,
+or use a piped call (eg. for curl)
+
+<pre><code lang="bash"># prettyprint a file directly
+pp file.json
+
+# use pp on a pipe
+cat file.xml | pp
+curl -c www.domain.org/service/document/1 | pp
+</code></pre>
+
 ### Try it
-<pre><code lang="bash">pp test.json
+<pre><code lang="bash"># prettyprint without color
+pp test.json
+
+# prettyprint with color
 pp -c test.json
 
+# prettyprint piped
 curl -s www.github.com | pp
 </code></pre>
 
@@ -33,8 +50,9 @@ like JSON Strings will be _unquoted_ and UTF-8 entities will be replaced by thei
 
 ## Why?
 
-I wanted it for pretty printing JSON requests, 
-but accidently it could be used to prettyprint XMLs.
+I wanted it for pretty printing JSON requests, namely for REST responses.
+
+So JSON was focused, and XML might not entirely work currently (in fact it fails `pp http://www.google.com`).
 
 ## What else?
 
