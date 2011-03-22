@@ -413,10 +413,12 @@ class Shell {
     global $argc, $argv;
     
     $filename = $argv[$argc - 1];
-    if ($argc > 1 && $filename[0] != '-') {
-      return file_get_contents($filename);
+    if ($argc == 1 || $filename[0] == '-') {
+      $filename = 'php://stdin';
     }
-    return file_get_contents('php://stdin');
+    
+    if ($filename == 'php://stdin' || file_exists($filename)) return file_get_contents($filename);
+    return $filename;
   }
 }
 
@@ -530,41 +532,55 @@ function json_pp($json_obj) {
  *  @param boolean $html_output True if the output should be escaped (for use in HTML)
  */
 function xml_pp($xml, $html_output=false) {
-    $xml_obj = new SimpleXMLElement($xml);
-    $level = 2;
-    $indent = 0; // current indentation level
-    $pretty = array();
-    
-    // get an array containing each XML element
-    $xml = explode("\n", preg_replace('/>\s*</', ">\n<", $xml_obj->asXML()));
+  set_error_handler('handle_xml_error');
+  
+  // for html, fix hr/br
+  $xml = str_replace(array('<hr>', '<br>'), array('<hr />', '<br />'), $xml);
+  
+  $xml_obj = new SimpleXMLElement($xml);
+  
+  $level = 2;
+  $indent = 0;
+  $pretty = array();
+  
+  // get an array containing each XML element
+  $xml = explode("\n", preg_replace('/>\s*</', ">\n<", $xml_obj->asXML()));
 
-    // shift off opening XML tag if present
-    if (count($xml) && preg_match('/^<\?\s*xml/', $xml[0])) {
-      $pretty[] = array_shift($xml);
-    }
+  // shift off opening XML tag if present
+  if (count($xml) && preg_match('/^<\?\s*xml/', $xml[0])) {
+    $pretty[] = array_shift($xml);
+  }
 
-    foreach ($xml as $el) {
-      if (preg_match('/^<([\w])+[^>\/]*>$/U', $el)) {
-          // opening tag, increase indent
-          $pretty[] = str_repeat(' ', $indent) . $el;
-          $indent += $level;
-      } else {
-        if (preg_match('/^<\/.+>$/', $el)) {            
-          $indent -= $level;  // closing tag, decrease indent
-        }
-        if ($indent < 0) {
-          $indent += $level;
-        }
-        $pretty[] = str_repeat(' ', $indent) . $el;
+  foreach ($xml as $el) {
+    if (preg_match('/^<([\w])+[^>\/]*>$/U', $el)) {
+      // opening tag, increase indent
+      $pretty[] = str_repeat(' ', $indent) . $el;
+      $indent += $level;
+    } else {
+      if (preg_match('/^<\/.+>$/', $el)) {            
+        $indent -= $level;  // closing tag, decrease indent
       }
-    }   
-    $xml = implode("\n", $pretty);   
-    return ($html_output) ? htmlentities($xml) : $xml;
+      if ($indent < 0) {
+        $indent += $level;
+      }
+      $pretty[] = str_repeat(' ', $indent) . $el;
+    }
+  }   
+  $xml = implode("\n", $pretty);   
+  return ($html_output) ? htmlentities($xml) : $xml;
+}
+
+function handle_xml_error() {
+  global $code;
+  xo('The source appears to be [b:red]invalid XML[/b]');
+  xo(str_repeat('-', 80));
+  xo($code);
+  exit;
 }
 
 if (hasArg('-h')) {
   xo(<<<HELP
-[b:red]Tharabas[/b] [b:yellow]JSON PrettyPrinter[/b]
+[b:red]Tharabas[/b] [b:yellow]CLI PrettyPrinter[/b]
 Usage: pp [options] <file>
 
   -c   colorize output
@@ -573,12 +589,13 @@ Usage: pp [options] <file>
 Example:
   pp local/data.json
   pp -c http://path/to/your/data.json
+  curl -s www.github.com/Tharabas/pp/
 HELP
   );
   exit(0);
 }
 
-// const CONFIG_PATH = "~/.pp.conf";
+// const CONFIG_PATH = "~/.pp.config";
 // 
 // if (file_exists(CONFIG_PATH)) {
 //   $conf = json_decode(file_get_contents(CONFIG_PATH));
@@ -586,6 +603,11 @@ HELP
 
 // look for JSON content
 $code = Shell::lastFileOrStdIn();
+
+if (!$code || !strlen($code)) {
+  
+  exit;
+}
 
 if ($code[0] == '{') {
   // user JSON
@@ -617,7 +639,12 @@ if ($code[0] == '{') {
 
   echo $json . "\n";
 } else if ($code[0] == '<') {
-  $xml = xml_pp($code);
+  $prefix = '';
+  if ($code[1] == '!') {
+    list($prefix, $code) = explode(">", $code, 2);
+    $prefix .= '>';
+  }
+  $xml = $prefix . xml_pp($code);
   
   if (hasArg('-c')) {
     // colorize blocks
@@ -638,6 +665,7 @@ if ($code[0] == '{') {
   
   echo $xml . "\n";
 } else {
-  echo b('Unknown Format', 'red') . "\n" . str_repeat('-', 80) . "\n";
-  echo $code;
+  xo(b('Unknown Format', 'red'));
+  xo(str_repeat('-', 80));
+  echo $code . "\n";
 }
