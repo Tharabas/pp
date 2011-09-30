@@ -38,6 +38,8 @@ class Shell {
 
   const META_START   = "\033[";
   const META_END     = "m";
+  
+  const STD_IN       = "php://stdin";
 
   /** Unix-Shell-Styles. */
   private static $unix_shell_styles = array(
@@ -412,13 +414,17 @@ class Shell {
   public static function lastFileOrStdIn() {
     global $argc, $argv;
     
-    $filename = $argv[$argc - 1];
-    if ($argc == 1 || $filename[0] == '-') {
-      $filename = 'php://stdin';
+    $filename = self::STD_IN;
+    $lastArg  = $argv[$argc - 1];
+    if ($argc > 1 && $lastArg[0] != '-') {
+      $filename = $lastArg;
     }
     
-    if ($filename == 'php://stdin' || file_exists($filename)) return file_get_contents($filename);
-    return $filename;
+    if (strpos($filename, '://') !== false || file_exists($filename)) {
+      return file_get_contents($filename);
+    }
+    
+    return null;
   }
 }
 
@@ -527,6 +533,28 @@ function json_pp($json_obj) {
   return $new_json;
 } // END encodePretty
 
+function json_colorize($json) {
+  // colorize blocks
+  $colorizer = array(
+    "/\"(.+)\":/" => function($m) { 
+      return c($m[1], 'teal').':'; 
+    },
+    "/(\s+|: )(\d+(?:\.\d+)?)(,?\n)/" => function($m) { 
+      return $m[1] . c($m[2], 'yellow') . $m[3]; 
+    },
+    "/(\s+|: )(\".+\")(,?\n)/" => function($m) { 
+      return $m[1] . c(json_decode($m[2]), 'green') . $m[3]; 
+    },
+    "/(\s+|: )(true|false|null)(,?\n)/" => function($m) { 
+      return $m[1] . c($m[2], 'red') . $m[3]; 
+    }
+  );
+
+  foreach ($colorizer as $rx => $callback) $json = preg_replace_callback($rx, $callback, $json);
+  
+  return $json;
+}
+
 /** Prettifies an XML string into a human-readable and indented work of art
  *  @param string $xml The XML as a string
  *  @param boolean $html_output True if the output should be escaped (for use in HTML)
@@ -544,20 +572,22 @@ function xml_pp($xml, $html_output=false) {
   $pretty = array();
   
   // get an array containing each XML element
-  $xml = explode("\n", preg_replace('/>\s*</', ">\n<", $xml_obj->asXML()));
-
+  $xml = trim($xml_obj->asXML());
+  $xml = preg_replace("/>\s*</U", ">\n<", $xml);
+  $xml = explode("\n", $xml);
+  
   // shift off opening XML tag if present
   if (count($xml) && preg_match('/^<\?\s*xml/', $xml[0])) {
     $pretty[] = array_shift($xml);
   }
 
   foreach ($xml as $el) {
-    if (preg_match('/^<([\w])+[^>\/]*>$/U', $el)) {
+    if (preg_match('/^<(\w+).*\>$/', $el)) {
       // opening tag, increase indent
       $pretty[] = str_repeat(' ', $indent) . $el;
-      $indent += $level;
+      if (!preg_match("/.*\/>$/", $el)) $indent += $level;
     } else {
-      if (preg_match('/^<\/.+>$/', $el)) {            
+      if (preg_match('/^<\/.+>$/', $el)) {       
         $indent -= $level;  // closing tag, decrease indent
       }
       if ($indent < 0) {
@@ -568,6 +598,28 @@ function xml_pp($xml, $html_output=false) {
   }   
   $xml = implode("\n", $pretty);   
   return ($html_output) ? htmlentities($xml) : $xml;
+}
+
+function xml_colorize($xml) {
+  // colorize blocks
+  $colorizer = array(
+    "/\>(.+)\</" => function($m) {
+      return '> ' . c(($m[1]), 'yellow') . ' <';
+    },
+    "/\s+(\w+(?:(?:-|:)\w+)*)=(\"[^\"]+\")/" => function($m) {
+      return ' ' . c($m[1], 'red') . '=' . c($m[2], 'green');
+    },
+    "/\<(\/?)(\w+)([^>]*)(\/?>)/" => function($m) {
+      return '<'.$m[1].c($m[2], 'teal').$m[3].$m[4];
+    },
+    "/(^.*<!\[CDATA\[.*$)([^\]]*)(^.*\]\]>.*$)/m" => function($m) {
+      return b($m[1],'red').c($m[2],'yellow').b($m[3],'red');
+    }
+  );
+
+  foreach ($colorizer as $rx => $callback) $xml = preg_replace_callback($rx, $callback, $xml);
+  
+  return $xml;
 }
 
 function handle_xml_error() {
@@ -589,13 +641,13 @@ Usage: pp [options] <file>
 Example:
   pp local/data.json
   pp -c http://path/to/your/data.json
-  curl -s www.github.com/Tharabas/pp/
+  curl -s www.github.com/Tharabas/pp/ | pp
 HELP
   );
   exit(0);
 }
 
-// const CONFIG_PATH = "~/.pp.config";
+// const CONFIG_PATH = "~/.pp";
 // 
 // if (file_exists(CONFIG_PATH)) {
 //   $conf = json_decode(file_get_contents(CONFIG_PATH));
@@ -605,9 +657,10 @@ HELP
 $code = Shell::lastFileOrStdIn();
 
 if (!$code || !strlen($code)) {
-  
   exit;
 }
+
+$colorize = hasArg('-c');
 
 if ($code[0] == '{') {
   // user JSON
@@ -617,24 +670,8 @@ if ($code[0] == '{') {
     // TODO align blocks
   }
 
-  if (hasArg('-c')) {
-    // colorize blocks
-    $colorizer = array(
-      "/\"(.+)\":/" => function($m) { 
-        return c($m[1], 'teal').':'; 
-      },
-      "/(\s+|: )(\".+\")(,?\n)/" => function($m) { 
-        return $m[1] . c(json_decode($m[2]), 'green') . $m[3]; 
-      },
-      "/(\s+|: )(\d+(?:\.\d+)?)(,?\n)/" => function($m) { 
-        return $m[1] . c($m[2], 'yellow') . $m[3]; 
-      },
-      "/(\s+|: )(true|false|null)(,?\n)/" => function($m) { 
-        return $m[1] . c($m[2], 'red') . $m[3]; 
-      }
-    );
-
-    foreach ($colorizer as $rx => $callback) $json = preg_replace_callback($rx, $callback, $json);
+  if ($colorize) {
+    $json = json_colorize($json);
   }
 
   echo $json . "\n";
@@ -642,25 +679,12 @@ if ($code[0] == '{') {
   $prefix = '';
   if ($code[1] == '!') {
     list($prefix, $code) = explode(">", $code, 2);
-    $prefix .= '>';
+    $prefix .= ">\n";
   }
   $xml = $prefix . xml_pp($code);
   
-  if (hasArg('-c')) {
-    // colorize blocks
-    $colorizer = array(
-      "/\>(.+)\</" => function($m) {
-        return '> ' . c(($m[1]), 'yellow') . ' <';
-      },
-      "/\s+(\w+)=(\"[^\"]+\")/" => function($m) {
-        return ' ' . c($m[1], 'red') . '=' . c($m[2], 'green');
-      },
-      "/\<(\/?)(\w+)([^>]*)(\/?>)/" => function($m) {
-        return '<'.$m[1].c($m[2], 'teal').$m[3].$m[4];
-      }
-    );
-
-    foreach ($colorizer as $rx => $callback) $xml = preg_replace_callback($rx, $callback, $xml);
+  if ($colorize) {
+    $xml = xml_colorize($xml);
   }
   
   echo $xml . "\n";
