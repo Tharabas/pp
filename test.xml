@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html>
+  <head><title>HTML as XML test</title></head>
+  <body>
+    <script type="text/javascript">
+      // <![CDATA[
+      var port = 1337;
+      // ]]>
+    </script>
+  </body>
+</html>
