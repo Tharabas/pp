@@ -5,19 +5,19 @@
  * Shell PrettyPrinter @ github.com/Tharabas/pp
  *
  * CLI pretty printing of JSON and XML files (currently)
- * 
+ *
  * Copyright (C) 2001-2011 by Tharabas <code@tharabas.de>
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -38,7 +38,7 @@ class Shell {
 
   const META_START   = "\033[";
   const META_END     = "m";
-  
+
   const STD_IN       = "php://stdin";
 
   /** Unix-Shell-Styles. */
@@ -410,20 +410,20 @@ class Shell {
 
     return $result;
   }
-  
+
   public static function lastFileOrStdIn() {
     global $argc, $argv;
-    
+
     $filename = self::STD_IN;
     $lastArg  = $argv[$argc - 1];
     if ($argc > 1 && $lastArg[0] != '-') {
       $filename = $lastArg;
     }
-    
+
     if (strpos($filename, '://') !== false || file_exists($filename)) {
       return file_get_contents($filename);
     }
-    
+
     return null;
   }
 }
@@ -444,7 +444,7 @@ function xoc($text) {
 function xon($text) {
   echo Shell::styleText($text) . "\n";
 }
-function c($text, $color) { 
+function c($text, $color) {
   return Shell::style($text, 'normal', $color);
 }
 function b($text, $color) {
@@ -536,22 +536,22 @@ function json_pp($json_obj) {
 function json_colorize($json) {
   // colorize blocks
   $colorizer = array(
-    "/\"(.+)\":/" => function($m) { 
-      return c($m[1], 'teal').':'; 
+    "/\"(.+)\":/" => function($m) {
+      return c($m[1], 'teal').':';
     },
-    "/(\s+|: )(\d+(?:\.\d+)?)(,?\n)/" => function($m) { 
-      return $m[1] . c($m[2], 'yellow') . $m[3]; 
+    "/(\s+|: )(\d+(?:\.\d+)?)(,?\n)/" => function($m) {
+      return $m[1] . c($m[2], 'yellow') . $m[3];
     },
-    "/(\s+|: )(\".+\")(,?\n)/" => function($m) { 
-      return $m[1] . c(json_decode($m[2]), 'green') . $m[3]; 
+    "/(\s+|: )(\".+\")(,?\n)/" => function($m) {
+      return $m[1] . c(json_decode($m[2]), 'green') . $m[3];
     },
-    "/(\s+|: )(true|false|null)(,?\n)/" => function($m) { 
-      return $m[1] . c($m[2], 'red') . $m[3]; 
+    "/(\s+|: )(true|false|null)(,?\n)/" => function($m) {
+      return $m[1] . c($m[2], 'red') . $m[3];
     }
   );
 
   foreach ($colorizer as $rx => $callback) $json = preg_replace_callback($rx, $callback, $json);
-  
+
   return $json;
 }
 
@@ -561,21 +561,27 @@ function json_colorize($json) {
  */
 function xml_pp($xml, $html_output=false) {
   set_error_handler('handle_xml_error');
-  
+
+  // check for xdebug-error output
+  if (strpos($xml, 'xdebug-error') !== false) {
+    $pos = strpos($xml, '<br />') + 6;
+    $xml = substr($xml, $pos);
+  }
+
   // for html, fix hr/br
   $xml = str_replace(array('<hr>', '<br>'), array('<hr />', '<br />'), $xml);
-  
+
   $xml_obj = new SimpleXMLElement($xml);
-  
+
   $level = 2;
   $indent = 0;
   $pretty = array();
-  
+
   // get an array containing each XML element
   $xml = trim($xml_obj->asXML());
   $xml = preg_replace("/>\s*</U", ">\n<", $xml);
   $xml = explode("\n", $xml);
-  
+
   // shift off opening XML tag if present
   if (count($xml) && preg_match('/^<\?\s*xml/', $xml[0])) {
     $pretty[] = array_shift($xml);
@@ -585,9 +591,9 @@ function xml_pp($xml, $html_output=false) {
     if (preg_match('/^<(\w+).*\>$/', $el)) {
       // opening tag, increase indent
       $pretty[] = str_repeat(' ', $indent) . $el;
-      if (!preg_match("/.*\/>$/", $el)) $indent += $level;
+      if (!preg_match("/.*\/>$/", $el) && !preg_match('/<\/.+>/', $el)) $indent += $level;
     } else {
-      if (preg_match('/^<\/.+>$/', $el)) {       
+      if (preg_match('/<\/.+>$/', $el)) {
         $indent -= $level;  // closing tag, decrease indent
       }
       if ($indent < 0) {
@@ -595,8 +601,10 @@ function xml_pp($xml, $html_output=false) {
       }
       $pretty[] = str_repeat(' ', $indent) . $el;
     }
-  }   
-  $xml = implode("\n", $pretty);   
+  }
+  // omit first xml line
+  array_shift($pretty);
+  $xml = implode("\n", $pretty);
   return ($html_output) ? htmlentities($xml) : $xml;
 }
 
@@ -618,7 +626,7 @@ function xml_colorize($xml) {
   );
 
   foreach ($colorizer as $rx => $callback) $xml = preg_replace_callback($rx, $callback, $xml);
-  
+
   return $xml;
 }
 
@@ -648,7 +656,7 @@ HELP
 }
 
 // const CONFIG_PATH = "~/.pp";
-// 
+//
 // if (file_exists(CONFIG_PATH)) {
 //   $conf = json_decode(file_get_contents(CONFIG_PATH));
 // }
@@ -661,8 +669,11 @@ if (!$code || !strlen($code)) {
 }
 
 $colorize = hasArg('-c');
+// determine the type
 
-if ($code[0] == '{') {
+$first_char = $code[0];
+
+if ($first_char === '{' || $first_char === '[') {
   // user JSON
   $json = json_pp(json_decode($code));
 
@@ -675,18 +686,20 @@ if ($code[0] == '{') {
   }
 
   echo $json . "\n";
-} else if ($code[0] == '<') {
+} else if ($first_char == '<') {
   $prefix = '';
   if ($code[1] == '!') {
     list($prefix, $code) = explode(">", $code, 2);
     $prefix .= ">\n";
   }
   $xml = $prefix . xml_pp($code);
-  
+
   if ($colorize) {
     $xml = xml_colorize($xml);
   }
-  
+
+  $xml = htmlspecialchars_decode($xml);
+
   echo $xml . "\n";
 } else {
   xo(b('Unknown Format', 'red'));
